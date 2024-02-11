@@ -1,6 +1,3 @@
-# d_practical_task
-### アルコールと歩こう～アルコールのあるゴール～
-2023年度iotクラウド技術応用塾　dチーム演習課題のリポジトリです。
 # 主な使用技術・言語・フレームワーク一覧
 ### バックエンド
 <img src="https://img.shields.io/badge/Python-{}.svg?logo=python&style=flat&logoColor=#3776AB"> <img src="https://img.shields.io/badge/API Gateway-FF4F8B.svg?logo=amazonapigateway&style=flat&logoColor=#3776AB">
