@@ -1,0 +1,40 @@
+name: ci-front
+
+on:
+  pull_request:
+    branches: [main]
+    paths: 'beer-frontend/src/**'
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm install
+        working-directory: ./beer-frontend
+
+      - name: Front build
+        run: npm run build --production
+        env:
+          REACT_APP_API_URL: https://xxxxxxxxxx.cloudfront.net/Prod/api
+          REACT_APP_DOMAIN: https://xxxxxxxxxx.cloudfront.net
+          REACT_APP_FITBIT_AUTH_CLIENT_ID: XXXXXXX #
+          REACT_APP_FITBIT_AUTH_CLIENT_SECRET: ${{ secrets.FITBIT_AUTH_CLIENT_SECRET }}
+          REACT_APP_COGNITO_USER_POOL_DOMAIN: https://xxxxxxxxxx.auth.ap-northeast-1.amazoncognito.com
+          REACT_APP_COGNITO_AUTH_CLIENT_ID: xxxxxxxxxxxxxxxxxxxx
+          REACT_APP_COGNITO_AUTH_CLIENT_SECRET: ${{ secrets.COGNITO_AUTH_CLIENT_SECRET }}
+
+        working-directory: ./beer-frontend

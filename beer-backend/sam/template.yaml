@@ -1,0 +1,234 @@
+
+# This is the SAM template that represents the architecture of your serverless application
+# https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-template-basics.html
+
+# The AWSTemplateFormatVersion identifies the capabilities of the template
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/format-version-structure.html
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  sam-app
+
+Parameters:
+  ActivityGoalTableName:
+    Type: String
+    Default: ActivityGoalTable
+
+  InstructorsBucketName:
+    Type: String
+    Default: xxxxxxxxxxx #to be replaced
+
+# Transform section specifies one or more macros that AWS CloudFormation uses to process your template
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/transform-section-structure.html
+Transform:
+- AWS::Serverless-2016-10-31
+
+# Resources declares the AWS resources that you want to include in the stack
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
+Resources:
+  RESTApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: health_beer_api
+      StageName: Prod
+
+  GetTodaysActivityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/get_today_activity_function
+      Handler: get_today_activity_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 1
+      Events:
+        GetTodayActivityEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/activities/today
+            Method: get
+            RestApiId: !Ref RESTApi
+
+  PostStartBeerServerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/beer_server_function
+      Handler: post_start_beer_server_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 1
+      Events:
+        PostStartBeerServerEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/beer/start
+            Method: get
+            RestApiId: !Ref RESTApi
+  
+  PostActivityGoalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/post_activity_goal_function
+      Handler: post_activity_goal_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 1
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ActivityGoalTableName
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ActivityGoalTableName
+      Events:
+        PostActivityGoalEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/users/{user_id}/goal
+            Method: post
+            RestApiId: !Ref RESTApi
+
+  GetActivityGoalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/get_activity_goal_function
+      Handler: get_activity_goal_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 1
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ActivityGoalTableName
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ActivityGoalTableName
+      Events:
+        GetActivityGoalEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/goals/{goal_id}
+            Method: get
+            RestApiId: !Ref RESTApi
+
+  GetLatestActivityGoalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/get_latest_activity_goal_function
+      Handler: get_latest_activity_goal_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 1
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ActivityGoalTableName
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ActivityGoalTableName
+      Events:
+        GetLatestActivityGoalEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/users/{user_id}/goals/latest
+            Method: get
+            RestApiId: !Ref RESTApi
+
+  GetActivityGoalsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/get_activity_goals_function
+      Handler: get_activity_goals_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 1
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ActivityGoalTableName
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ActivityGoalTableName
+      Events:
+        GetActivityGoalsEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/users/{user_id}/goals
+            Method: get
+            RestApiId: !Ref RESTApi
+    
+  ChatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/chat_function
+      Handler: chat_function.lambda_handler
+      Runtime: python3.9
+      Layers:
+        - !Ref ChatFunctionLayer
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Sub "{{resolve:secretsmanager:OpenAISecretsManager::APIKey}}"
+      Timeout: 120
+      Events:
+        ChatEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/chat
+            Method: post
+            RestApiId: !Ref RESTApi
+
+  ChatFunctionLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      Description: Layer for using openai gpt
+      ContentUri: './layer/chat_function_layer/'
+      CompatibleRuntimes:
+        - python3.9
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.9
+
+  PostStartBeerServerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/post_start_beer_server_function
+      Handler: post_start_beer_server_function.lambda_handler
+      Runtime: python3.9
+      Policies:
+        - "arn:aws:iam::aws:policy/AWSIoTFullAccess"
+      Events:
+        StartBeerServerEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/devices/{device_id}/start
+            Method: post
+            RestApiId: !Ref RESTApi
+
+  PostStopBeerServerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/post_stop_beer_server_function
+      Handler: post_stop_beer_server_function.lambda_handler
+      Runtime: python3.9
+      Policies:
+        - "arn:aws:iam::aws:policy/AWSIoTFullAccess"
+      Events:
+        StopBeerServerEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/devices/{device_id}/stop
+            Method: post
+            RestApiId: !Ref RESTApi
+  
+  GetInstructorsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/get_instructors_function
+      Handler: get_instructors_function.lambda_handler
+      Runtime: python3.9
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref InstructorsBucketName
+      Events:
+        StopBeerServerEndpoint:
+          Type: Api
+          Properties:
+            Path: /api/instructors
+            Method: get
+            RestApiId: !Ref RESTApi
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: !Ref InstructorsBucketName
+
+Outputs:
+  WebEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${RESTApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"

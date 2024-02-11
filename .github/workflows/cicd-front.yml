@@ -1,0 +1,54 @@
+name: cicd-front
+
+on:
+  push:
+    branches: [main]
+    paths: 'beer-frontend/src/**'
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/aws-identity-providers-federation-github-actions
+          role-session-name: github-actions-dev
+          aws-region: ap-northeast-1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm install
+        working-directory: ./beer-frontend
+
+      - name: Front build
+        run: npm run build --production
+        env:
+          REACT_APP_API_URL: https://d2xuq81w4f1cof.cloudfront.net/Prod/api
+          REACT_APP_DOMAIN: https://d2xuq81w4f1cof.cloudfront.net
+          REACT_APP_FITBIT_AUTH_CLIENT_ID: 23RJGP
+          REACT_APP_FITBIT_AUTH_CLIENT_SECRET: ${{ secrets.FITBIT_AUTH_CLIENT_SECRET }}
+          REACT_APP_COGNITO_USER_POOL_DOMAIN: https://beer-health-user.auth.ap-northeast-1.amazoncognito.com
+          REACT_APP_COGNITO_AUTH_CLIENT_ID: 6rl42sh5abnlei6dds1pgl50ak
+          REACT_APP_COGNITO_AUTH_CLIENT_SECRET: ${{ secrets.COGNITO_AUTH_CLIENT_SECRET }}
+        working-directory: ./beer-frontend
+
+      - name: Set Execution Permission for deploy.sh
+        run: chmod +x ./deploy.sh
+        working-directory: ./beer-frontend
+
+      - name: Front Deploy
+        run: ./deploy.sh
+        working-directory: ./beer-frontend

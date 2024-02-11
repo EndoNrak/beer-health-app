@@ -1,0 +1,294 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform:
+- AWS::Serverless-2016-10-31
+
+Parameters:
+# APIGateway ID managed using SAM 
+  ApiGatewayID:
+    Type: String
+    Default: XXXX # to be replaced
+
+# S3Bucket for React produced files with npm run build
+  S3FrontendHostingBucketName:
+    Type: String
+    Default: XXXX
+
+# S3Bucket for generated instructors images and instructors.json
+  S3InstructorsBucketName:
+    Type: String
+    Default: XXXX # to be replaced
+
+# Cognito User pool name
+  CognitoUserPoolName:
+    Type: String
+    Default: XXXX # to be replaced
+  
+  CognitoUserPoolDomain:
+    Type: String
+    Default: XXXX # to be replaced
+
+# DynamoDB table for managing activity goals of users
+  ActivityGoalDynamoDBName:
+    Type: String
+    Default: ActivityGoalTable
+  
+  FitbitSecretsManagerName:
+    Type: String
+    Default: FitbitSecretsManager
+
+  GoogleSecretsManagerName:
+    Type: String
+    Default: GoogleSecretsManager
+  
+  OpenAISecretsManagerName:
+    Type: String
+    Default: OpenAISecretsManager
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3FrontendHostingBucketName
+      PublicAccessBlockConfiguration: 
+          BlockPublicAcls: false
+          BlockPublicPolicy: false
+          IgnorePublicAcls: false
+          RestrictPublicBuckets: false
+  
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: "AllowCloudFrontAccess"
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${S3Bucket}/*"
+  
+  S3InstructorsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3InstructorsBucketName
+      PublicAccessBlockConfiguration: 
+          BlockPublicAcls: false
+          BlockPublicPolicy: false
+          IgnorePublicAcls: false
+          RestrictPublicBuckets: false
+
+  S3InstructorsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3InstructorsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: "AllowCloudFrontAccess"
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${S3InstructorsBucket}/*"
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        DefaultRootObject: index.html
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt S3Bucket.DomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: S3InstructorOrigin
+            DomainName: !GetAtt S3InstructorsBucket.DomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: ApiGatewayOrigin
+            DomainName: !Sub "${ApiGatewayID}.execute-api.${AWS::Region}.amazonaws.com"
+            CustomOriginConfig:
+              HTTPSPort: '443'
+              OriginProtocolPolicy: https-only
+              
+        CustomErrorResponses: 
+          - ErrorCachingMinTTL: 86400
+            ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+
+        CacheBehaviors:
+          - PathPattern: /Prod/api/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            TargetOriginId: ApiGatewayOrigin
+            ForwardedValues:
+              QueryString: true
+            ViewerProtocolPolicy: redirect-to-https
+            DefaultTTL: 60
+            MaxTTL: 120
+
+          - PathPattern: /instructors/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            TargetOriginId: S3InstructorOrigin
+            ForwardedValues:
+              QueryString: true
+            ViewerProtocolPolicy: redirect-to-https
+            DefaultTTL: 259200
+            MaxTTL: 3888000
+
+        Enabled: true
+
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AccountRecoverySetting: 
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AliasAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      EmailConfiguration: 
+        EmailSendingAccount: COGNITO_DEFAULT
+      Policies: 
+        PasswordPolicy:
+          MinimumLength: 6
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+      UserPoolName: !Ref CognitoUserPoolName
+  
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AuthSessionValidity: 3
+      CallbackURLs: 
+        - http://localhost:3000/redirect/login/cognito
+        - http://localhost:3000/redirect/logout/cognito
+        - !Sub "https://${CloudFrontDistribution.DomainName}/redirect/login/cognito"
+        - !Sub "https://${CloudFrontDistribution.DomainName}/redirect/logout/cognito"
+      ClientName: cognito-user-pool-client
+      DefaultRedirectURI: http://localhost:3000/redirect/login/cognito
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_CUSTOM_AUTH
+      PreventUserExistenceErrors: ENABLED
+      GenerateSecret: true
+      SupportedIdentityProviders:
+        - COGNITO
+        - Google
+      UserPoolId: !Ref CognitoUserPool
+
+  CongnitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoUserPoolDomain
+      UserPoolId: !Ref CognitoUserPool
+  
+  GoogleIDProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      ProviderName: "Google"
+      ProviderDetails:
+        client_id: !Sub "{{resolve:secretsmanager:${GoogleSecrets}::GoogleOidcClientID}}"
+        client_secret: !Sub "{{resolve:secretsmanager:${GoogleSecrets}::GoogleOidcClientSecret}}"
+        authorize_scopes: "profile email openid"
+      ProviderType: "Google"
+      AttributeMapping:
+        email: "email"
+
+  GoalDynamoDBTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "GoalId"
+          AttributeType: "S"
+        - 
+          AttributeName: "UserId"
+          AttributeType: "S"
+        - 
+          AttributeName: "CreatedAt"
+          AttributeType: "N"
+      KeySchema: 
+        - 
+          AttributeName: "GoalId"
+          KeyType: "HASH"
+        - 
+          AttributeName: "CreatedAt"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      TableName: !Ref ActivityGoalDynamoDBName
+      GlobalSecondaryIndexes: 
+        - 
+          IndexName: "UserGSI"
+          KeySchema: 
+            - 
+              AttributeName: "UserId"
+              KeyType: "HASH"
+            - 
+              AttributeName: "CreatedAt"
+              KeyType: "RANGE"
+          Projection: 
+            ProjectionType: "ALL"
+          ProvisionedThroughput: 
+            ReadCapacityUnits: "1"
+            WriteCapacityUnits: "1"
+ 
+  FitbitSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref FitbitSecretsManagerName
+      SecretString: '{"FitbitOidcClientID":"XXXXX","FitbitOidcClientSecret":"YYYYYYYY"}'
+
+  GoogleSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref GoogleSecretsManagerName
+      SecretString: '{"GoogleOidcClientID":"XXXXX","GoogleOidcClientSecret":"yyyyyy"}'
+
+  OpenAISecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref OpenAISecretsManagerName
+      SecretString: '{"APIKey":"XXXXXXXX"}'
+ 
+Outputs:
+  CloudFrontDomainName:
+    Description: CloudFront Domain Name
+    Value: !GetAtt CloudFrontDistribution.DomainName
